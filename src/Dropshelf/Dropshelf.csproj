@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!-- Lets the project compile on macOS/Linux build machines; the app itself only runs on Windows. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Dropshelf.ico</ApplicationIcon>
+    <AssemblyName>Dropshelf</AssemblyName>
+    <RootNamespace>Dropshelf</RootNamespace>
+    <Product>Dropshelf</Product>
+    <Description>Floating drag-and-drop shelves for Windows</Description>
+    <Version>1.0.0</Version>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NoWarn>$(NoWarn);CA1416;SYSLIB1054;SYSLIB1096;WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\Dropshelf.ico" />
+  </ItemGroup>
+
+</Project>

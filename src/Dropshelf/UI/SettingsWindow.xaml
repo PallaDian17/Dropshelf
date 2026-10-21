@@ -1,0 +1,334 @@
+<Window x:Class="Dropshelf.UI.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:core="clr-namespace:Dropshelf.Core"
+        xmlns:ui="clr-namespace:Dropshelf.UI"
+        Title="Dropshelf Settings" Width="1000" Height="720" MinWidth="840" MinHeight="520"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBackgroundBrush}"
+        FontFamily="{StaticResource UiFont}" FontSize="13" Foreground="{DynamicResource TextPrimaryBrush}"
+        UseLayoutRounding="True">
+
+    <Window.Resources>
+        <Style x:Key="Page" TargetType="ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+            <Setter Property="Padding" Value="32,26,32,26" />
+        </Style>
+        <Style TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="MinWidth" Value="220" />
+            <Setter Property="SelectedValuePath" Value="Tag" />
+        </Style>
+    </Window.Resources>
+
+    <TabControl x:Name="Tabs" Style="{StaticResource SidebarTabControl}" ItemContainerStyle="{StaticResource SidebarTabItem}">
+
+        <!-- ================================ General ================================ -->
+        <TabItem Header="General" Tag="&#xE713;" x:Name="GeneralTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="General" />
+                    <TextBlock Style="{StaticResource PageSubtitle}" Text="Startup, appearance and how Dropshelf connects to Windows." />
+
+                    <ui:SettingRow Title="Launch at sign-in" Description="Start Dropshelf automatically when you sign in to Windows.">
+                        <CheckBox x:Name="LaunchAtLoginToggle" Style="{StaticResource ToggleSwitch}" Click="OnLaunchAtLoginClick" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Show in notification area" Description="When hidden, open Dropshelf again from the Start menu to get back to Settings.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShowTrayIcon}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Use color to distinguish shelves" Description="Gives each new shelf its own color dot. Shelves you color yourself keep their color.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding UseColorLabels}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Shelf takes focus when shown" Description="The new shelf becomes the active window right away. When off, the app you are working in stays active.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShelfTakesFocus}" />
+                    </ui:SettingRow>
+
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Windows integration" />
+                    <ui:SettingRow Title="&quot;Add to Dropshelf&quot; in Explorer's right-click menu" Description="On Windows 11 it appears under Show more options.">
+                        <CheckBox x:Name="ContextMenuToggle" Style="{StaticResource ToggleSwitch}" Click="OnContextMenuClick" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Dropshelf in the Send to menu" Description="Right-click files › Send to › Dropshelf.">
+                        <CheckBox x:Name="SendToToggle" Style="{StaticResource ToggleSwitch}" Click="OnSendToClick" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Adding files behavior" Description="Where files go when added through shortcuts, Send to, the context menu, or the command line.">
+                        <ComboBox SelectedValue="{Binding InboundBehavior}">
+                            <ComboBoxItem Content="Show in New Shelf" Tag="{x:Static core:InboundBehavior.NewShelf}" />
+                            <ComboBoxItem Content="Add to Visible Shelf" Tag="{x:Static core:InboundBehavior.VisibleShelf}" />
+                            <ComboBoxItem Content="Add to Last Active Shelf" Tag="{x:Static core:InboundBehavior.LastActiveShelf}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Application data" />
+                    <TextBlock Style="{StaticResource RowSubtitle}" Margin="2,0,0,8"
+                               Text="Files Dropshelf created: raw data dropped without a file, text snippets, clipboard images and action output." />
+                    <StackPanel x:Name="AppDataList" />
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Shelf activation ============================ -->
+        <TabItem Header="Shelf Activation" Tag="&#xE7C9;" x:Name="ActivationTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Shelf Activation" />
+                    <TextBlock Style="{StaticResource PageSubtitle}" Text="Choose how shelves appear while you drag: shake the cursor, or hold a key." />
+
+                    <ui:SettingRow Title="Activate with shake gesture" Description="Shake the cursor left and right while dragging.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ShakeEnabled}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Shake sensitivity" Description="Higher sensitivity needs fewer, shorter shakes.">
+                        <ComboBox SelectedValue="{Binding ShakeSensitivity}" IsEnabled="{Binding ShakeEnabled}">
+                            <ComboBoxItem Content="Default Sensitivity" Tag="{x:Static core:ShakeSensitivity.Normal}" />
+                            <ComboBoxItem Content="High Sensitivity" Tag="{x:Static core:ShakeSensitivity.High}" />
+                            <ComboBoxItem Content="Highest Sensitivity" Tag="{x:Static core:ShakeSensitivity.Highest}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Activate with a key" Description="Hold this key while dragging to open a shelf. Note: Explorer uses Ctrl (copy), Shift (move) and Alt (shortcut) while dragging.">
+                        <ComboBox SelectedValue="{Binding ActivationModifier}">
+                            <ComboBoxItem Content="Off" Tag="{x:Static core:ActivationModifier.None}" />
+                            <ComboBoxItem Content="Using Alt key" Tag="{x:Static core:ActivationModifier.Alt}" />
+                            <ComboBoxItem Content="Using Ctrl key" Tag="{x:Static core:ActivationModifier.Control}" />
+                            <ComboBoxItem Content="Using Shift key" Tag="{x:Static core:ActivationModifier.Shift}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Ignored applications" />
+                    <TextBlock Style="{StaticResource RowSubtitle}" Margin="2,0,0,8"
+                               Text="Shaking while dragging in these apps never opens a shelf (useful for drawing apps and games)." />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <ListBox x:Name="IgnoredList" ItemsSource="{Binding IgnoredApplications}" MinHeight="40" MaxHeight="200" />
+                            <TextBlock x:Name="IgnoredEmpty" Text="No ignored applications" Foreground="{DynamicResource TextSecondaryBrush}" Margin="6,4" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="Add Running App…" Click="OnAddRunningApp" Margin="0,0,8,0" />
+                                <Button Content="Browse…" Click="OnBrowseIgnoredApp" Margin="0,0,8,0" />
+                                <Button Content="Remove" Click="OnRemoveIgnoredApp" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Shelf interaction ============================ -->
+        <TabItem Header="Shelf Interaction" Tag="&#xE90C;" x:Name="InteractionTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Shelf Interaction" />
+                    <TextBlock Style="{StaticResource PageSubtitle}" Text="Where shelves appear and how they behave when you drag things out." />
+
+                    <ui:SettingRow Title="Default shelf location" Description="For shelves created without shaking the cursor.">
+                        <ComboBox SelectedValue="{Binding DefaultShelfLocation}">
+                            <ComboBoxItem Content="Near Cursor" Tag="{x:Static core:ShelfLocation.NearCursor}" />
+                            <ComboBoxItem Content="Center" Tag="{x:Static core:ShelfLocation.Center}" />
+                            <ComboBoxItem Content="Top Left Corner" Tag="{x:Static core:ShelfLocation.TopLeft}" />
+                            <ComboBoxItem Content="Top Right Corner" Tag="{x:Static core:ShelfLocation.TopRight}" />
+                            <ComboBoxItem Content="Bottom Left Corner" Tag="{x:Static core:ShelfLocation.BottomLeft}" />
+                            <ComboBoxItem Content="Bottom Right Corner" Tag="{x:Static core:ShelfLocation.BottomRight}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Snap into place" Description="Shelves align to screen edges and each other after moving. Hold Ctrl while moving to skip.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding SnapIntoPlace}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Retract after first drop" Description="After the first drop on a shaken shelf, it slides to the nearest screen edge to stay out of the way.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding RetractAfterFirstDrop}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Double-click files">
+                        <ComboBox SelectedValue="{Binding DoubleClickFiles}">
+                            <ComboBoxItem Content="Open Files" Tag="{x:Static core:DoubleClickAction.Open}" />
+                            <ComboBoxItem Content="Preview" Tag="{x:Static core:DoubleClickAction.Preview}" />
+                            <ComboBoxItem Content="Show in Explorer" Tag="{x:Static core:DoubleClickAction.Reveal}" />
+                            <ComboBoxItem Content="No Action" Tag="{x:Static core:DoubleClickAction.Nothing}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Double-click shelf title bar">
+                        <ComboBox SelectedValue="{Binding DoubleClickEdge}">
+                            <ComboBoxItem Content="Dock Shelf to Edge" Tag="{x:Static core:EdgeDoubleClickAction.Dock}" />
+                            <ComboBoxItem Content="No Action" Tag="{x:Static core:EdgeDoubleClickAction.Nothing}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Close on drag out" Description="Depending on the destination, Windows moves or copies dragged files. By default the shelf closes only after its items were moved.">
+                        <ComboBox SelectedValue="{Binding CloseOnDragOut}">
+                            <ComboBoxItem Content="Only when items are moved" Tag="{x:Static core:OutboundDragBehavior.OnlyWhenMoved}" />
+                            <ComboBoxItem Content="Always" Tag="{x:Static core:OutboundDragBehavior.Always}" />
+                            <ComboBoxItem Content="Never" Tag="{x:Static core:OutboundDragBehavior.Never}" />
+                        </ComboBox>
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Always copy items when dragging out" Description="Explorer moves files dragged within the same drive. Turn this on to always copy instead.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AlwaysCopyOnDragOut}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Convert text to plain text" Description="Dragged text keeps its formatting by default.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ConvertTextToPlain}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow Title="Close detail view when clicking outside" Description="The expanded shelf collapses back when you switch to another window.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding AutoCloseDetailView}" />
+                    </ui:SettingRow>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Keyboard shortcuts ============================ -->
+        <TabItem Header="Keyboard Shortcuts" Tag="&#xE765;" x:Name="ShortcutsTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Keyboard Shortcuts" />
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Click a shortcut and press the new combination (Esc cancels). Global shortcuts need Ctrl, Alt or Win. Uncheck to disable." />
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Global shortcuts" />
+                    <StackPanel x:Name="GlobalShortcuts" />
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Shelf shortcuts" />
+                    <TextBlock Style="{StaticResource RowSubtitle}" Margin="2,0,0,8" Text="These work while a shelf is the active window. Click a shelf first." />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel x:Name="ShelfShortcuts" />
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Instant actions ============================ -->
+        <TabItem Header="Instant Actions" Tag="&#xE945;" x:Name="InstantTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Instant Actions" />
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Instant Actions appear under a new shelf while you are still dragging. Drop files on an action to run it right away." />
+                    <ui:SettingRow Title="Enable Instant Actions">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding InstantActionsEnabled}" />
+                    </ui:SettingRow>
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <ListBox x:Name="InstantList" MinHeight="40" MaxHeight="260" />
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                                <Button Content="Add Action…" Click="OnAddInstantAction" Margin="0,0,8,0" />
+                                <Button Content="Move Up" Click="OnInstantUp" Margin="0,0,8,0" />
+                                <Button Content="Move Down" Click="OnInstantDown" Margin="0,0,8,0" />
+                                <Button Content="Remove" Click="OnRemoveInstantAction" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="After a successful action" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <RadioButton x:Name="InstantCloseRadio" Content="Close shelf" GroupName="InstantAfter" Checked="OnInstantAfterChanged" />
+                            <RadioButton x:Name="InstantKeepRadio" Content="Keep shelf open" GroupName="InstantAfter" Checked="OnInstantAfterChanged" />
+                            <TextBlock Style="{StaticResource RowSubtitle}" Text="The shelf always stays open when an action fails." Margin="0,6,0,0" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Favorite actions ============================ -->
+        <TabItem Header="Favorite Actions" Tag="&#xE734;" x:Name="FavoritesTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Favorite File Actions" />
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Favorites appear directly in the shelf's action menu when they apply to the files. Choose up to 5." />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel x:Name="FavoritesList" />
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Custom actions ============================ -->
+        <TabItem Header="Custom Actions" Tag="&#xE70F;" x:Name="CustomTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Custom Actions" />
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Save an action with preset options — for example “Resize to 1080 px into Downloads” — and run it with one click. Custom actions appear alongside the built-in ones." />
+                    <StackPanel x:Name="CustomList" />
+                    <TextBlock x:Name="CustomEmpty" Text="No custom actions yet." Foreground="{DynamicResource TextSecondaryBrush}" Margin="2,0,0,10" />
+                    <Button Content="Create Custom Action…" HorizontalAlignment="Left" Click="OnCreateCustomAction" />
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Custom scripts ============================ -->
+        <TabItem Header="Custom Scripts" Tag="&#xE943;" x:Name="ScriptsTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Custom Scripts" />
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Put PowerShell (.ps1), batch (.bat/.cmd), Python (.py), JScript/VBScript or .exe files in the Scripts folder. Each becomes a shelf action. The shelf's file paths are passed as arguments and in the DROPSHELF_FILES environment variable (one per line)." />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Button Content="Open Scripts Folder" Click="OnRevealScripts" Margin="0,0,8,0" />
+                        <Button Content="Import Script…" Click="OnImportScript" Margin="0,0,8,0" />
+                        <Button Content="Refresh" Click="OnRefreshScripts" Margin="0,0,8,0" />
+                        <Button Content="Show Log" Click="OnShowScriptLog" />
+                    </StackPanel>
+                    <StackPanel x:Name="ScriptsList" />
+                    <TextBlock x:Name="ScriptsEmpty" Text="No scripts in the Scripts folder yet." Foreground="{DynamicResource TextSecondaryBrush}" Margin="2,0,0,0" />
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ============================ Folder monitoring ============================ -->
+        <TabItem Header="Folder Monitoring" Tag="&#xE8B7;" x:Name="FoldersTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <TextBlock Style="{StaticResource PageTitle}" Text="Folder Monitoring" />
+                    <TextBlock Style="{StaticResource PageSubtitle}" Text="Show new files in a shelf as soon as they appear in a folder — for example downloads or screenshots." />
+
+                    <ui:SettingRow Title="Screenshot shelf" Description="New screenshots (Win+PrtScn, Snipping Tool) appear in a shelf.">
+                        <CheckBox Style="{StaticResource ToggleSwitch}" IsChecked="{Binding ScreenshotShelfEnabled}" />
+                    </ui:SettingRow>
+                    <ui:SettingRow x:Name="ScreenshotFolderRow" Title="Screenshots folder">
+                        <Button x:Name="ScreenshotFolderButton" Click="OnChangeScreenshotFolder" MaxWidth="320" />
+                    </ui:SettingRow>
+
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Monitored folders" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="240" />
+                            <ColumnDefinition Width="16" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource Card}" VerticalAlignment="Top">
+                            <StackPanel>
+                                <ListBox x:Name="FolderList" MinHeight="60" MaxHeight="360" SelectionChanged="OnFolderSelected" />
+                                <TextBlock x:Name="FoldersEmpty" Text="No monitored folders" Foreground="{DynamicResource TextSecondaryBrush}" Margin="6,4" />
+                                <Button Content="Add Folder…" Click="OnAddFolder" Margin="0,10,0,0" HorizontalAlignment="Left" />
+                            </StackPanel>
+                        </Border>
+                        <StackPanel x:Name="FolderDetail" Grid.Column="2" />
+                    </Grid>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+
+        <!-- ================================ About ================================ -->
+        <TabItem Header="About" Tag="&#xE946;" x:Name="AboutTab">
+            <ScrollViewer Style="{StaticResource Page}">
+                <StackPanel MaxWidth="820">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                        <Image x:Name="AppIcon" Width="72" Height="72" Margin="0,0,18,0" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Dropshelf" FontSize="26" FontWeight="SemiBold" />
+                            <TextBlock x:Name="VersionText" Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource PageSubtitle}"
+                               Text="Floating drag-and-drop shelves for Windows. Collect files from anywhere, process them, and drop them where they need to go. An independent Windows reimplementation inspired by Dropover for macOS." />
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Quick Start Guide" Click="OnQuickStart" Margin="0,0,8,0" />
+                        <Button Content="Open Data Folder" Click="OnOpenDataFolder" Margin="0,0,8,0" />
+                        <Button Content="Open Logs" Click="OnOpenLogs" />
+                    </StackPanel>
+
+                    <TextBlock Style="{StaticResource SectionHeader}" Text="Tips" Margin="2,24,0,8" />
+                    <Border Style="{StaticResource Card}">
+                        <TextBlock TextWrapping="Wrap" LineHeight="21" Foreground="{DynamicResource TextSecondaryBrush}">
+                            • Hold Alt and click a shelf's close button to empty it instead.<LineBreak />
+                            • Push a shelf past the left or right screen edge to dock it; hover to bring it back.<LineBreak />
+                            • Press Space on a shelf to preview, Ctrl+K to search actions, Ctrl+C to copy its files.<LineBreak />
+                            • Drag a shelf's stack to drag everything at once; open the detail view to drag single items.<LineBreak />
+                            • Closed shelves stay under Recent Shelves in the notification-area menu.
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </TabItem>
+    </TabControl>
+</Window>

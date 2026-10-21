@@ -1,0 +1,27 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Color x:Key="ShadowColor">#FF000000</Color>
+    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#FF202020" />
+    <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#FF1B1B1B" />
+    <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FF2B2B2B" />
+    <SolidColorBrush x:Key="CardBorderBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="ShelfBackgroundBrush" Color="#F2262629" />
+    <SolidColorBrush x:Key="ShelfBorderBrush" Color="#2EFFFFFF" />
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F2FFFFFF" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A6FFFFFF" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#66FFFFFF" />
+    <SolidColorBrush x:Key="ControlFillBrush" Color="#14FFFFFF" />
+    <SolidColorBrush x:Key="ControlFillHoverBrush" Color="#22FFFFFF" />
+    <SolidColorBrush x:Key="ControlFillPressedBrush" Color="#0DFFFFFF" />
+    <SolidColorBrush x:Key="ControlBorderBrush" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="InputBackgroundBrush" Color="#0FFFFFFF" />
+    <SolidColorBrush x:Key="MenuBackgroundBrush" Color="#FF2C2C2E" />
+    <SolidColorBrush x:Key="MenuBorderBrush" Color="#24FFFFFF" />
+    <SolidColorBrush x:Key="MenuHoverBrush" Color="#1FFFFFFF" />
+    <SolidColorBrush x:Key="SeparatorBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="ThumbBorderBrush" Color="#E6FFFFFF" />
+    <SolidColorBrush x:Key="TextCardBrush" Color="#FFF5F5F0" />
+    <SolidColorBrush x:Key="OverlayBrush" Color="#CC1C1C1E" />
+    <SolidColorBrush x:Key="DangerBrush" Color="#FFFF6B6B" />
+    <SolidColorBrush x:Key="SuccessBrush" Color="#FF4CD964" />
+</ResourceDictionary>

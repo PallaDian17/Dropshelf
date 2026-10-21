@@ -1,0 +1,55 @@
+<Window x:Class="Dropshelf.UI.PreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Preview" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" WindowStartupLocation="CenterScreen"
+        Width="820" Height="620" UseLayoutRounding="True"
+        FontFamily="{StaticResource UiFont}" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}">
+    <Border Margin="16" CornerRadius="14" Background="{DynamicResource ShelfBackgroundBrush}"
+            BorderBrush="{DynamicResource ShelfBorderBrush}" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="22" ShadowDepth="4" Opacity="0.4" Color="{DynamicResource ShadowColor}" />
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="46" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Background="Transparent" MouseLeftButtonDown="OnHeaderMouseDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                    <Button x:Name="PrevButton" Style="{StaticResource IconButton}" Content="&#xE76B;" Click="OnPrevious" ToolTip="Previous (Left arrow)" />
+                    <Button x:Name="NextButton" Style="{StaticResource IconButton}" Content="&#xE76C;" Click="OnNext" ToolTip="Next (Right arrow)" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="10,0" IsHitTestVisible="False">
+                    <TextBlock x:Name="TitleText" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="SubtitleText" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,10,0">
+                    <Button Content="Open" Margin="0,0,6,0" Click="OnOpen" />
+                    <Button Style="{StaticResource IconButton}" Content="&#xE838;" Click="OnReveal" ToolTip="Show in Explorer" />
+                    <Button Style="{StaticResource IconButton}" Content="&#xE711;" Click="OnClose" ToolTip="Close (Esc)" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Grid.Row="1" Margin="14,0,14,14">
+                <Image x:Name="ImageView" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" Visibility="Collapsed" />
+                <MediaElement x:Name="MediaView" LoadedBehavior="Manual" UnloadedBehavior="Close" Stretch="Uniform"
+                              Visibility="Collapsed" MouseLeftButtonUp="OnMediaClick" />
+                <TextBox x:Name="TextView" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         FontFamily="Cascadia Mono, Consolas" FontSize="12" VerticalContentAlignment="Top"
+                         Padding="10" Visibility="Collapsed" />
+                <StackPanel x:Name="InfoView" VerticalAlignment="Center" HorizontalAlignment="Center" Visibility="Collapsed">
+                    <Image x:Name="InfoIcon" Width="256" Height="256" Stretch="Uniform" />
+                    <TextBlock x:Name="InfoText" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,14,0,0"
+                               Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" MaxWidth="460" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

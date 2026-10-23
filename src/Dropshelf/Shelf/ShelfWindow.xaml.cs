@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Dropshelf.Actions;
 using Dropshelf.Core;
 using Dropshelf.Native;
+using Dropshelf.UI;
 
 namespace Dropshelf.Shelf;
 
@@ -60,6 +61,19 @@ public partial class ShelfWindow : Window, IShelfHost
     private string? _color;
     private bool _isPinned;
 
+    // Motion state.
+    private Size _cardSize = StackSize;
+    private int _resizeVersion;
+    private bool _resizing;
+    private bool _highlighted;
+    private bool _closeAnimationDone;
+    private bool _closingAnimating;
+    private bool? _pillShown;
+    private bool? _emptyShown;
+    private bool _toastShown;
+    private readonly RectangleGeometry _cardClip = new();
+    private readonly Dictionary<Guid, StackVisual> _stackVisuals = new();
+
     public ShelfWindow(ShelfManager manager, bool fromGesture)
     {
         InitializeComponent();
@@ -74,7 +88,7 @@ public partial class ShelfWindow : Window, IShelfHost
         _toastTimer.Tick += (_, _) =>
         {
             _toastTimer.Stop();
-            Toast.Visibility = Visibility.Collapsed;
+            HideToast();
         };
         _retractTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(650) };
         _retractTimer.Tick += (_, _) =>
@@ -103,9 +117,10 @@ public partial class ShelfWindow : Window, IShelfHost
             if (_dock != DockEdge.None && !_revealed) Reveal();
         };
         MouseLeave += (_, _) => ScheduleRetract();
+        Loaded += (_, _) => PlayAppear();
 
         ApplyViewMode(SettingsStore.Current.ViewMode);
-        SetMode(ShelfMode.Stack);
+        SetMode(ShelfMode.Stack, animate: false);
         UpdateChrome();
     }
 
@@ -118,7 +133,8 @@ public partial class ShelfWindow : Window, IShelfHost
 
     public IntPtr Handle => _hwnd != IntPtr.Zero ? _hwnd : (_hwnd = WindowHelper.Handle(this));
     public IReadOnlyList<ShelfItem> AllItems => Items;
-    public bool IsClosed => _closed;
+    /// <summary>Closed, or playing its close animation (treated as gone everywhere else).</summary>
+    public bool IsClosed => _closed || _closingAnimating;
     public bool IsDocked => _dock != DockEdge.None;
     public DockEdge Dock => _dock;
     public bool IsDragTarget => _dragInside;
@@ -268,8 +284,35 @@ public partial class ShelfWindow : Window, IShelfHost
         var title = ShelfTitle;
         Title = $"{title} – Dropshelf";
         FooterText.Text = title;
-        FooterPill.Visibility = Items.Count == 0 && _customName is null ? Visibility.Hidden : Visibility.Visible;
-        EmptyState.Visibility = Items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        // Compare against the intended state, not Opacity: a just-started animation still reads
+        // its start value until the next frame.
+        var showPill = Items.Count > 0 || _customName is not null;
+        FooterPill.IsHitTestVisible = showPill;
+        if (_pillShown != showPill)
+        {
+            _pillShown = showPill;
+            if (IsLoaded) Motion.To(FooterPill, OpacityProperty, showPill ? 1 : 0, 180);
+            else Motion.Set(FooterPill, OpacityProperty, showPill ? 1 : 0);
+        }
+
+        var empty = Items.Count == 0;
+        if (_emptyShown != empty)
+        {
+            _emptyShown = empty;
+            if (!IsLoaded)
+            {
+                Motion.Set(EmptyState, OpacityProperty, 1);
+                EmptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
+            }
+            else if (empty)
+            {
+                Motion.FadeIn(EmptyState, 200);
+            }
+            else
+            {
+                Motion.FadeOut(EmptyState, 120);
+            }
+        }
         PinGlyph.Visibility = _isPinned ? Visibility.Visible : Visibility.Collapsed;
 
         Brush? colorBrush = null;
@@ -314,10 +357,22 @@ public partial class ShelfWindow : Window, IShelfHost
         _stackRefreshTimer.Start();
     }
 
-    /// <summary>Draws up to three of the newest items as a slightly fanned stack.</summary>
+    /// <summary>One thumbnail in the fanned stack; kept across rebuilds so it can animate.</summary>
+    private sealed class StackVisual
+    {
+        public required Grid Host { get; init; }
+        public required ScaleTransform Scale { get; init; }
+        public required RotateTransform Rotate { get; init; }
+        public required TranslateTransform Shift { get; init; }
+        public object? ContentKey { get; set; }
+    }
+
+    /// <summary>
+    /// Shows up to three of the newest items as a slightly fanned stack. New items drop in and
+    /// settle with a spring, existing ones rotate to their new place, removed ones shrink away.
+    /// </summary>
     private void RebuildStack()
     {
-        StackHost.Children.Clear();
         var shown = Items.Skip(Math.Max(0, Items.Count - 3)).ToList();
         double[] angles = shown.Count switch
         {
@@ -325,44 +380,115 @@ public partial class ShelfWindow : Window, IShelfHost
             2 => [-7, 4],
             _ => [-9, 7, 0],
         };
+        var shownIds = shown.Select(i => i.Id).ToHashSet();
+
+        foreach (var (id, old) in _stackVisuals.Where(kv => !shownIds.Contains(kv.Key)).ToList())
+        {
+            _stackVisuals.Remove(id);
+            var host = old.Host;
+            Motion.To(old.Scale, ScaleTransform.ScaleXProperty, 0.8, 180, Motion.EaseIn);
+            Motion.To(old.Scale, ScaleTransform.ScaleYProperty, 0.8, 180, Motion.EaseIn);
+            Motion.To(host, OpacityProperty, 0, 180, completed: () => StackHost.Children.Remove(host));
+        }
 
         for (var i = 0; i < shown.Count; i++)
         {
             var item = shown[i];
-            FrameworkElement visual;
-            if (item.Thumbnail is { } source)
+            var angle = angles[Math.Min(i, angles.Length - 1)];
+            var isNew = !_stackVisuals.TryGetValue(item.Id, out var visual);
+            if (isNew)
             {
-                var image = new Image { Source = source, Stretch = Stretch.Uniform, MaxWidth = 92, MaxHeight = 84 };
-                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
-                visual = item.IsImage
-                    ? new Border
-                    {
-                        Child = image,
-                        BorderThickness = new Thickness(2),
-                        BorderBrush = UI.ThemeManager.Brush("ThumbBorderBrush"),
-                        Background = UI.ThemeManager.Brush("ThumbBorderBrush"),
-                        CornerRadius = new CornerRadius(3),
-                        Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.35 },
-                    }
-                    : image;
+                visual = CreateStackVisual();
+                _stackVisuals[item.Id] = visual;
+                StackHost.Children.Add(visual.Host);
+            }
+            Panel.SetZIndex(visual!.Host, i);
+            UpdateStackVisualContent(visual, item, fade: !isNew);
+
+            if (isNew)
+            {
+                // Drops in from slightly above, a little larger and tilted, then settles.
+                Motion.Set(visual.Host, OpacityProperty, 0);
+                visual.Rotate.Angle = angle + (i % 2 == 0 ? 12 : -12);
+                Motion.To(visual.Host, OpacityProperty, 1, 140, delayMs: i * 40);
+                Motion.To(visual.Shift, TranslateTransform.YProperty, 0, 560, Motion.Spring, from: -26);
+                Motion.To(visual.Scale, ScaleTransform.ScaleXProperty, 1, 560, Motion.Spring, from: 1.22);
+                Motion.To(visual.Scale, ScaleTransform.ScaleYProperty, 1, 560, Motion.Spring, from: 1.22);
+                Motion.To(visual.Rotate, RotateTransform.AngleProperty, angle, 620, Motion.Spring);
             }
             else
             {
-                visual = new TextBlock
-                {
-                    Text = item.Glyph,
-                    FontFamily = (FontFamily)FindResource("IconFont"),
-                    FontSize = 46,
-                    Foreground = UI.ThemeManager.Brush("TextSecondaryBrush"),
-                };
+                Motion.To(visual.Rotate, RotateTransform.AngleProperty, angle, 460, Motion.Spring);
             }
-
-            visual.HorizontalAlignment = HorizontalAlignment.Center;
-            visual.VerticalAlignment = VerticalAlignment.Center;
-            visual.RenderTransformOrigin = new Point(0.5, 0.5);
-            visual.RenderTransform = new RotateTransform(angles[Math.Min(i, angles.Length - 1)]);
-            StackHost.Children.Add(visual);
         }
+    }
+
+    private static StackVisual CreateStackVisual()
+    {
+        var scale = new ScaleTransform();
+        var rotate = new RotateTransform();
+        var shift = new TranslateTransform();
+        var host = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = new TransformGroup { Children = { scale, rotate, shift } },
+        };
+        return new StackVisual { Host = host, Scale = scale, Rotate = rotate, Shift = shift };
+    }
+
+    /// <summary>Puts the item's thumbnail (or its kind glyph while loading) into the stack visual.</summary>
+    private void UpdateStackVisualContent(StackVisual visual, ShelfItem item, bool fade)
+    {
+        object key = (object?)item.Thumbnail ?? item.Glyph;
+        if (Equals(visual.ContentKey, key)) return;
+        visual.ContentKey = key;
+
+        FrameworkElement content;
+        if (item.Thumbnail is { } source)
+        {
+            var image = new Image { Source = source, Stretch = Stretch.Uniform, MaxWidth = 92, MaxHeight = 84 };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.HighQuality);
+            content = item.IsImage
+                ? new Border
+                {
+                    Child = image,
+                    BorderThickness = new Thickness(2),
+                    BorderBrush = UI.ThemeManager.Brush("ThumbBorderBrush"),
+                    Background = UI.ThemeManager.Brush("ThumbBorderBrush"),
+                    CornerRadius = new CornerRadius(3),
+                    Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.35 },
+                }
+                : image;
+        }
+        else
+        {
+            content = new TextBlock
+            {
+                Text = item.Glyph,
+                FontFamily = (FontFamily)FindResource("IconFont"),
+                FontSize = 46,
+                Foreground = UI.ThemeManager.Brush("TextSecondaryBrush"),
+            };
+        }
+
+        visual.Host.Children.Clear();
+        visual.Host.Children.Add(content);
+        if (fade) Motion.To(content, OpacityProperty, 1, 220, from: 0);
+    }
+
+    private void OnStackMouseEnter(object sender, MouseEventArgs e)
+    {
+        if (Items.Count == 0) return;
+        Motion.To(StackLift, ScaleTransform.ScaleXProperty, 1.05, 420, Motion.Spring);
+        Motion.To(StackLift, ScaleTransform.ScaleYProperty, 1.05, 420, Motion.Spring);
+    }
+
+    private void OnStackMouseLeave(object sender, MouseEventArgs e)
+    {
+        Motion.To(StackLift, ScaleTransform.ScaleXProperty, 1, 380, Motion.SoftSpring);
+        Motion.To(StackLift, ScaleTransform.ScaleYProperty, 1, 380, Motion.SoftSpring);
     }
 
     private void ApplyViewMode(ItemViewMode mode)
@@ -378,43 +504,232 @@ public partial class ShelfWindow : Window, IShelfHost
     {
         if (_closed) return;
         ToastText.Text = message;
+        var alreadyShown = _toastShown;
+        _toastShown = true;
         Toast.Visibility = Visibility.Visible;
+        Motion.To(Toast, OpacityProperty, 1, 160);
+        if (!alreadyShown) Motion.To(ToastShift, TranslateTransform.YProperty, 0, 460, Motion.Spring, from: 12);
         _toastTimer.Stop();
         _toastTimer.Start();
+    }
+
+    private void HideToast()
+    {
+        _toastShown = false;
+        Motion.To(ToastShift, TranslateTransform.YProperty, 6, 200, Motion.EaseIn);
+        Motion.FadeOut(Toast, 200);
     }
 
     // =====================================================================================
     // Modes and panels
     // =====================================================================================
 
-    private void SetMode(ShelfMode mode)
+    private FrameworkElement ViewOf(ShelfMode mode) => mode switch
     {
-        _mode = mode;
-        StackView.Visibility = mode == ShelfMode.Stack ? Visibility.Visible : Visibility.Collapsed;
-        DetailView.Visibility = mode == ShelfMode.Detail ? Visibility.Visible : Visibility.Collapsed;
-        PanelView.Visibility = mode == ShelfMode.Panel ? Visibility.Visible : Visibility.Collapsed;
+        ShelfMode.Stack => StackView,
+        ShelfMode.Detail => DetailView,
+        _ => PanelView,
+    };
 
-        switch (mode)
+    /// <summary>Card size (outer, in DIPs) for a mode; panels are measured to fit their content.</summary>
+    private Size TargetSize(ShelfMode mode) => mode switch
+    {
+        ShelfMode.Stack => StackSize,
+        ShelfMode.Detail => DetailSize,
+        _ => new Size(PanelWidth, MeasurePanelHeight()),
+    };
+
+    private double MeasurePanelHeight()
+    {
+        // A height pinned while the panel was fading out would otherwise become its "desired" height.
+        PanelView.ClearValue(HeightProperty);
+        PanelView.Visibility = Visibility.Visible;
+        PanelView.Measure(new Size(PanelWidth - 2, double.PositiveInfinity));
+        return Math.Clamp(Math.Ceiling(PanelView.DesiredSize.Height) + 2, 110, 640);
+    }
+
+    /// <summary>
+    /// Switches between stack, detail and panel. The card morphs to the new size with a soft
+    /// spring while the old content fades out and the new content fades and slides in, already
+    /// laid out at its final size so it is revealed rather than reflowed.
+    /// </summary>
+    private void SetMode(ShelfMode mode, bool animate = true)
+    {
+        var previous = _mode;
+        var oldView = ViewOf(previous);
+        var newView = ViewOf(mode);
+        _mode = mode;
+
+        if (mode == ShelfMode.Stack) ItemsList.SelectedItems.Clear();
+        newView.Visibility = Visibility.Visible;
+        if (mode == ShelfMode.Detail) UpdateDetailHeader();
+
+        var target = TargetSize(mode);
+        if (previous == mode)
         {
-            case ShelfMode.Stack:
-                SizeToContent = SizeToContent.Manual;
-                Width = StackSize.Width + 2 * MarginDip;
-                Height = StackSize.Height + 2 * MarginDip;
-                ItemsList.SelectedItems.Clear();
-                break;
-            case ShelfMode.Detail:
-                SizeToContent = SizeToContent.Manual;
-                Width = DetailSize.Width + 2 * MarginDip;
-                Height = DetailSize.Height + 2 * MarginDip;
-                UpdateDetailHeader();
-                break;
-            case ShelfMode.Panel:
-                Width = PanelWidth + 2 * MarginDip;
-                SizeToContent = SizeToContent.Height;
-                break;
+            // Same view with new content (one panel replacing another): just follow its size.
+            ResizeCard(target, animate && Motion.Enabled && IsLoaded && IsVisible);
+            return;
         }
 
-        if (_hwnd != IntPtr.Zero) Dispatcher.BeginInvoke(EnsureOnScreen, DispatcherPriority.Loaded);
+        var animated = animate && Motion.Enabled && IsLoaded && IsVisible;
+        if (!animated)
+        {
+            foreach (var view in new[] { StackView, DetailView, PanelView })
+            {
+                UnpinView(view);
+                Motion.Set(view, OpacityProperty, 1);
+                if (!ReferenceEquals(view, newView)) view.Visibility = Visibility.Collapsed;
+            }
+            ResizeCard(target, animate: false);
+            return;
+        }
+
+        PinView(oldView, _cardSize, pinHeight: true);
+        Motion.To(oldView, OpacityProperty, 0, 110, completed: () =>
+        {
+            oldView.Visibility = Visibility.Collapsed;
+            UnpinView(oldView);
+            Motion.Set(oldView, OpacityProperty, 1);
+        });
+
+        PinView(newView, target, pinHeight: mode != ShelfMode.Panel);
+        var slide = new TranslateTransform(0, mode == ShelfMode.Stack ? -8 : 8);
+        newView.RenderTransform = slide;
+        Motion.Set(newView, OpacityProperty, 0);
+        Motion.To(newView, OpacityProperty, 1, 200, delayMs: 70);
+        Motion.To(slide, TranslateTransform.YProperty, 0, 460, Motion.SoftSpring);
+        ResizeCard(target, animate: true, completed: () =>
+        {
+            if (_mode == mode) UnpinView(newView);
+        });
+    }
+
+    /// <summary>Fixes a view's size and top-left anchors it, so it doesn't reflow while the card animates.</summary>
+    private static void PinView(FrameworkElement view, Size cardSize, bool pinHeight)
+    {
+        view.HorizontalAlignment = HorizontalAlignment.Left;
+        view.VerticalAlignment = VerticalAlignment.Top;
+        view.Width = Math.Max(0, cardSize.Width - 2);
+        if (pinHeight) view.Height = Math.Max(0, cardSize.Height - 2);
+        else view.ClearValue(HeightProperty);
+    }
+
+    private static void UnpinView(FrameworkElement view)
+    {
+        view.ClearValue(WidthProperty);
+        view.ClearValue(HeightProperty);
+        view.ClearValue(HorizontalAlignmentProperty);
+        view.ClearValue(VerticalAlignmentProperty);
+    }
+
+    /// <summary>
+    /// Resizes the card. The window first grows to fit the whole animation (its transparent area is
+    /// click-through), the card springs to its new size, then the window shrinks to fit exactly.
+    /// </summary>
+    private void ResizeCard(Size target, bool animate, Action? completed = null)
+    {
+        var version = ++_resizeVersion;
+        var from = new Size(
+            Root.ActualWidth > 0 ? Root.ActualWidth : _cardSize.Width,
+            Root.ActualHeight > 0 ? Root.ActualHeight : _cardSize.Height);
+        _cardSize = target;
+
+        if (!animate || !Motion.Enabled)
+        {
+            _resizing = false;
+            Motion.Set(Root, WidthProperty, target.Width);
+            Motion.Set(Root, HeightProperty, target.Height);
+            SetWindowSizeFor(target);
+            if (_hwnd != IntPtr.Zero && IsLoaded) Dispatcher.BeginInvoke(EnsureOnScreen, DispatcherPriority.Loaded);
+            completed?.Invoke();
+            return;
+        }
+
+        _resizing = true;
+        SetWindowSizeFor(new Size(Math.Max(from.Width, target.Width) * 1.05, Math.Max(from.Height, target.Height) * 1.05));
+        KeepInView(target);
+
+        const double duration = 400;
+        Motion.To(Root, WidthProperty, target.Width, duration, Motion.SoftSpring);
+        Motion.To(Root, HeightProperty, target.Height, duration, Motion.SoftSpring, completed: () =>
+        {
+            if (version != _resizeVersion) return;
+            _resizing = false;
+            SetWindowSizeFor(target);
+            completed?.Invoke();
+            if (_mode == ShelfMode.Panel) Dispatcher.BeginInvoke(RefitPanel, DispatcherPriority.Loaded);
+        });
+    }
+
+    private void SetWindowSizeFor(Size card)
+    {
+        Width = Math.Ceiling(card.Width + 2 * MarginDip);
+        Height = Math.Ceiling(card.Height + 2 * MarginDip);
+    }
+
+    /// <summary>Slides the window along with a growing card so the card ends up fully on screen.</summary>
+    private void KeepInView(Size target)
+    {
+        if (_hwnd == IntPtr.Zero || _closed || (_dock != DockEdge.None && !_revealed)) return;
+        var r = WindowHelper.GetRect(Handle);
+        var m = MarginPx;
+        var left = r.Left + m;
+        var top = r.Top + m;
+        var w = (int)Math.Ceiling(target.Width * Scale);
+        var h = (int)Math.Ceiling(target.Height * Scale);
+        var wa = WindowHelper.WorkAreaAt(new NativeMethods.POINT(left + (int)(_cardSize.Width * Scale / 2), top + 10));
+        var newLeft = Math.Clamp(left, wa.Left, Math.Max(wa.Left, wa.Right - w));
+        var newTop = Math.Clamp(top, wa.Top, Math.Max(wa.Top, wa.Bottom - h));
+        if (newLeft != left || newTop != top)
+            WindowHelper.AnimateTo(Handle, newLeft - m, newTop - m, 380, () => _manager.SavePinned());
+    }
+
+    private void OnPanelHostSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (_mode == ShelfMode.Panel && !_resizing && IsLoaded) RefitPanel();
+    }
+
+    /// <summary>Panel content changed height (fields shown or hidden, search results): follow it.</summary>
+    private void RefitPanel()
+    {
+        if (_mode != ShelfMode.Panel || _closed || _resizing) return;
+        var target = TargetSize(ShelfMode.Panel);
+        if (Math.Abs(target.Height - _cardSize.Height) < 1) return;
+        ResizeCard(target, animate: true);
+    }
+
+    /// <summary>Rounded clipping so content never pokes out of the card while it animates.</summary>
+    private void OnCardContentSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _cardClip.RadiusX = 15;
+        _cardClip.RadiusY = 15;
+        _cardClip.Rect = new Rect(e.NewSize);
+        if (!ReferenceEquals(CardContent.Clip, _cardClip)) CardContent.Clip = _cardClip;
+    }
+
+    /// <summary>The shelf grows softly into place when it first appears.</summary>
+    private void PlayAppear()
+    {
+        if (_closingAnimating) return;
+        if (!Motion.Enabled)
+        {
+            Motion.Set(Root, OpacityProperty, 1);
+            return;
+        }
+        Motion.To(Root, OpacityProperty, 1, 200);
+        Motion.To(RootScale, ScaleTransform.ScaleXProperty, 1, 480, Motion.SoftSpring, from: 0.88);
+        Motion.To(RootScale, ScaleTransform.ScaleYProperty, 1, 480, Motion.SoftSpring, from: 0.88);
+    }
+
+    /// <summary>Ring and gentle lift while something is dragged over the shelf.</summary>
+    private void SetDropHighlight(bool on)
+    {
+        if (_highlighted == on) return;
+        _highlighted = on;
+        Motion.To(DropHighlight, OpacityProperty, on ? 1 : 0, on ? 100 : 200);
+        Motion.To(LiftScale, ScaleTransform.ScaleXProperty, on ? 1.035 : 1, 460, Motion.Spring);
+        Motion.To(LiftScale, ScaleTransform.ScaleYProperty, on ? 1.035 : 1, 460, Motion.Spring);
     }
 
     private void ShowPanel(string title, string subtitle, FrameworkElement content, string? primaryText, Func<Task<bool>>? onPrimary)
@@ -437,9 +752,18 @@ public partial class ShelfWindow : Window, IShelfHost
 
     private void ClosePanel()
     {
-        PanelHost.Content = null;
         _panelPrimary = null;
         SetMode(_modeBeforePanel == ShelfMode.Detail && Items.Count > 0 ? ShelfMode.Detail : ShelfMode.Stack);
+
+        // Keep the content while it fades out; drop it afterwards unless a new panel replaced it.
+        var content = PanelHost.Content;
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_mode != ShelfMode.Panel && ReferenceEquals(PanelHost.Content, content)) PanelHost.Content = null;
+        };
+        timer.Start();
         ScheduleRetract();
     }
 
@@ -691,7 +1015,7 @@ public partial class ShelfWindow : Window, IShelfHost
         {
             busyTimer.Stop();
             BusyText.Text = action.ProgressText;
-            BusyOverlay.Visibility = Visibility.Visible;
+            Motion.FadeIn(BusyOverlay, 160);
         };
         busyTimer.Start();
         try
@@ -701,7 +1025,7 @@ public partial class ShelfWindow : Window, IShelfHost
         finally
         {
             busyTimer.Stop();
-            BusyOverlay.Visibility = Visibility.Collapsed;
+            Motion.FadeOut(BusyOverlay, 160);
             _busy = false;
             _actionCts.Dispose();
             _actionCts = null;
@@ -918,7 +1242,7 @@ public partial class ShelfWindow : Window, IShelfHost
 
         _dragInside = true;
         _retractTimer.Stop();
-        DropHighlight.Visibility = Visibility.Visible;
+        SetDropHighlight(true);
         if (_dock != DockEdge.None && !_revealed) Reveal();
     }
 
@@ -926,9 +1250,13 @@ public partial class ShelfWindow : Window, IShelfHost
     {
         base.OnDragLeave(e);
         // Moving between child elements raises DragLeave too, but the DragEnter/DragOver that
-        // follows immediately sets the flag again, so it is safe to always clear it here.
+        // follows immediately sets the flag again, so it is safe to always clear it here; the
+        // visual is only dropped if the drag is still outside once that has happened.
         _dragInside = false;
-        DropHighlight.Visibility = Visibility.Collapsed;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_dragInside) SetDropHighlight(false);
+        }, DispatcherPriority.Background);
         ScheduleRetract();
     }
 
@@ -937,7 +1265,7 @@ public partial class ShelfWindow : Window, IShelfHost
         base.OnDrop(e);
         e.Handled = true;
         _dragInside = false;
-        DropHighlight.Visibility = Visibility.Collapsed;
+        SetDropHighlight(false);
         if (ReferenceEquals(ShelfManager.ActiveOutboundShelf, this)) return;
 
         var items = ItemImporter.FromDataObject(e.Data);
@@ -1188,17 +1516,24 @@ public partial class ShelfWindow : Window, IShelfHost
         WindowHelper.MoveTo(hwnd, left - margin, top - margin);
     }
 
+    /// <summary>
+    /// The card's rectangle in physical pixels, from its final (target) size: while a resize is
+    /// animating the window is temporarily larger than the card.
+    /// </summary>
     public NativeMethods.RECT CardRectPx()
     {
         var r = WindowHelper.GetRect(Handle);
         var m = MarginPx;
-        return new NativeMethods.RECT(r.Left + m, r.Top + m, r.Right - m, r.Bottom - m);
+        var left = r.Left + m;
+        var top = r.Top + m;
+        return new NativeMethods.RECT(left, top,
+            left + (int)Math.Round(_cardSize.Width * Scale), top + (int)Math.Round(_cardSize.Height * Scale));
     }
 
     private void MoveCardTo(int cardLeft, int cardTop, bool animate)
     {
         var m = MarginPx;
-        if (animate) WindowHelper.AnimateTo(Handle, cardLeft - m, cardTop - m, 160, () => _manager.SavePinned());
+        if (animate) WindowHelper.AnimateTo(Handle, cardLeft - m, cardTop - m, 300, () => _manager.SavePinned());
         else WindowHelper.MoveTo(Handle, cardLeft - m, cardTop - m);
     }
 
@@ -1297,7 +1632,7 @@ public partial class ShelfWindow : Window, IShelfHost
 
         var xs = new List<int> { wa.Left + gap, wa.Right - gap - c.Width };
         var ys = new List<int> { wa.Top + gap, wa.Bottom - gap - c.Height };
-        foreach (var other in _manager.Shelves.Where(o => !ReferenceEquals(o, this) && o.IsVisible && !o.IsDocked))
+        foreach (var other in _manager.Shelves.Where(o => !ReferenceEquals(o, this) && o.IsVisible && !o.IsDocked && !o.IsClosed))
         {
             var r = other.CardRectPx();
             var verticalOverlap = c.Top < r.Bottom + tolerance && c.Bottom > r.Top - tolerance;
@@ -1368,7 +1703,9 @@ public partial class ShelfWindow : Window, IShelfHost
             ShowToast("Another screen continues past this edge");
             return;
         }
-        if (_mode != ShelfMode.Stack) SetMode(ShelfMode.Stack);
+        // Collapse instantly: a card still shrinking from the detail size would overhang the screen
+        // while it slides to the edge.
+        if (_mode != ShelfMode.Stack) SetMode(ShelfMode.Stack, animate: false);
 
         var c = CardRectPx();
         if (_dock == DockEdge.None)
@@ -1376,7 +1713,7 @@ public partial class ShelfWindow : Window, IShelfHost
         _dock = edge;
         _revealed = false;
         var (x, y) = DockedPosition(hidden: true);
-        WindowHelper.AnimateTo(Handle, x, y, 200, () => _manager.SavePinned());
+        WindowHelper.AnimateTo(Handle, x, y, 340, () => _manager.SavePinned());
     }
 
     public void Undock()
@@ -1385,16 +1722,16 @@ public partial class ShelfWindow : Window, IShelfHost
         var (x, y) = DockedPosition(hidden: false);
         _dock = DockEdge.None;
         _revealed = false;
-        WindowHelper.AnimateTo(Handle, x, y, 180, () => _manager.SavePinned());
+        WindowHelper.AnimateTo(Handle, x, y, 300, () => _manager.SavePinned());
     }
 
     private (int X, int Y) DockedPosition(bool hidden)
     {
-        var r = WindowHelper.GetRect(Handle);
+        var c = CardRectPx();
         var m = MarginPx;
-        var cardW = r.Width - 2 * m;
-        var cardH = r.Height - 2 * m;
-        var cardTop = r.Top + m;
+        var cardW = c.Width;
+        var cardH = c.Height;
+        var cardTop = c.Top;
         var peek = (int)(PeekDip * Scale);
         var gap = (int)(8 * Scale);
         var wa = _dockWorkArea;
@@ -1411,7 +1748,7 @@ public partial class ShelfWindow : Window, IShelfHost
         if (_dock == DockEdge.None || _closed) return;
         _revealed = true;
         var (x, y) = DockedPosition(hidden: false);
-        WindowHelper.AnimateTo(Handle, x, y, 160);
+        WindowHelper.AnimateTo(Handle, x, y, 260);
     }
 
     private void ScheduleRetract()
@@ -1431,22 +1768,35 @@ public partial class ShelfWindow : Window, IShelfHost
         }
         _revealed = false;
         var (x, y) = DockedPosition(hidden: true);
-        WindowHelper.AnimateTo(Handle, x, y, 200);
+        WindowHelper.AnimateTo(Handle, x, y, 340, ease: Motion.EaseInOut);
     }
 
-    /// <summary>Brings the shelf into view (reveals a docked shelf) and flashes its border.</summary>
+    /// <summary>Brings the shelf into view (reveals a docked shelf) with a short pulse of its ring.</summary>
     public void Present()
     {
+        if (_closed) return;
         if (_dock != DockEdge.None && !_revealed) Reveal();
-        DropHighlight.Visibility = Visibility.Visible;
-        var t = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
-        t.Tick += (_, _) =>
+        if (!Motion.Enabled)
         {
-            t.Stop();
-            if (!_dragInside) DropHighlight.Visibility = Visibility.Collapsed;
+            // No animation: show the ring briefly instead.
+            Motion.Set(DropHighlight, OpacityProperty, 1);
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(600) };
+            timer.Tick += (_, _) =>
+            {
+                timer.Stop();
+                if (!_highlighted) Motion.Set(DropHighlight, OpacityProperty, 0);
+                ScheduleRetract();
+            };
+            timer.Start();
+            return;
+        }
+        Motion.To(LiftScale, ScaleTransform.ScaleXProperty, _highlighted ? 1.035 : 1, 560, Motion.Spring, from: 1.07);
+        Motion.To(LiftScale, ScaleTransform.ScaleYProperty, _highlighted ? 1.035 : 1, 560, Motion.Spring, from: 1.07);
+        Motion.To(DropHighlight, OpacityProperty, 1, 120, completed: () =>
+        {
+            if (!_highlighted) Motion.To(DropHighlight, OpacityProperty, 0, 420, delayMs: 300);
             ScheduleRetract();
-        };
-        t.Start();
+        });
     }
 
     // =====================================================================================
@@ -1528,9 +1878,33 @@ public partial class ShelfWindow : Window, IShelfHost
         e.Handled = true;
     }
 
+    /// <summary>Plays a short shrink-and-fade before the window really closes.</summary>
     protected override void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
+        if (e.Cancel) return;
+
+        var canAnimate = !_closeAnimationDone && Motion.Enabled && IsVisible
+                         && !_manager.IsShuttingDown && !Dispatcher.HasShutdownStarted;
+        if (canAnimate)
+        {
+            e.Cancel = true;
+            if (_closingAnimating) return;
+            _closingAnimating = true;
+            IsHitTestVisible = false;
+            AllowDrop = false;
+            _toastTimer.Stop();
+            _retractTimer.Stop();
+            _actionCts?.Cancel();
+            Motion.To(Root, OpacityProperty, 0, 160, Motion.EaseIn);
+            Motion.To(RootScale, ScaleTransform.ScaleXProperty, 0.9, 180, Motion.EaseIn);
+            Motion.To(RootScale, ScaleTransform.ScaleYProperty, 0.9, 180, Motion.EaseIn, completed: () =>
+            {
+                _closeAnimationDone = true;
+                Close();
+            });
+            return;
+        }
         _actionCts?.Cancel();
     }
 

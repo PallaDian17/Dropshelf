@@ -22,6 +22,12 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         DataContext = _settings;
         SourceInitialized += (_, _) => WindowHelper.UseDarkTitleBar(this, ThemeManager.IsDark);
+        Tabs.SelectionChanged += (_, e) =>
+        {
+            // SelectionChanged also bubbles up from combo boxes and lists inside the pages.
+            if (ReferenceEquals(e.OriginalSource, Tabs) && Tabs.SelectedItem is TabItem { Content: FrameworkElement page })
+                AnimatePageIn(page);
+        };
         ThemeManager.ThemeChanged += OnThemeChanged;
         Closed += (_, _) =>
         {
@@ -58,6 +64,15 @@ public partial class SettingsWindow : Window
     }
 
     private void OnThemeChanged() => WindowHelper.UseDarkTitleBar(this, ThemeManager.IsDark);
+
+    /// <summary>A newly selected page rises slightly into place as it fades in.</summary>
+    private static void AnimatePageIn(FrameworkElement page)
+    {
+        var shift = new TranslateTransform(0, 12);
+        page.RenderTransform = shift;
+        Motion.To(page, OpacityProperty, 1, 200, from: 0);
+        Motion.To(shift, TranslateTransform.YProperty, 0, 460, Motion.SoftSpring);
+    }
 
     // =====================================================================================
     // General

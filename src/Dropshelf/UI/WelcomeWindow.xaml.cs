@@ -1,5 +1,6 @@
 using System.Windows;
-using System.Windows.Shapes;
+using System.Windows.Controls;
+using System.Windows.Media;
 using Dropshelf.Core;
 using Dropshelf.Native;
 
@@ -25,10 +26,15 @@ public partial class WelcomeWindow : Window
     {
         InitializeComponent();
         SourceInitialized += (_, _) => WindowHelper.UseDarkTitleBar(this, ThemeManager.IsDark);
-        Render();
+        for (var i = 0; i < Pages.Length; i++)
+        {
+            Dots.Children.Add(new Border { Width = 7, Height = 7, CornerRadius = new CornerRadius(3.5), Margin = new Thickness(4, 0, 4, 0) });
+        }
+        Render(0);
     }
 
-    private void Render()
+    /// <param name="direction">+1 moving forward, −1 back, 0 first show.</param>
+    private void Render(int direction)
     {
         var (glyph, title, text) = Pages[_page];
         Illustration.Text = glyph;
@@ -38,16 +44,17 @@ public partial class WelcomeWindow : Window
         SkipButton.Visibility = _page == Pages.Length - 1 ? Visibility.Hidden : Visibility.Visible;
         NextButton.Content = _page == 0 ? "Get Started" : _page == Pages.Length - 1 ? "Done" : "Next";
 
-        Dots.Children.Clear();
-        for (var i = 0; i < Pages.Length; i++)
+        // The page slides in from the direction of travel; the active dot stretches into a pill.
+        if (direction != 0)
         {
-            Dots.Children.Add(new Ellipse
-            {
-                Width = 7,
-                Height = 7,
-                Margin = new Thickness(4, 0, 4, 0),
-                Fill = i == _page ? ThemeManager.Brush("AccentBrush") : ThemeManager.Brush("TextTertiaryBrush"),
-            });
+            Motion.To(PageContent, OpacityProperty, 1, 220, from: 0);
+            Motion.To(PageShift, TranslateTransform.XProperty, 0, 480, Motion.SoftSpring, from: 36 * direction);
+        }
+        for (var i = 0; i < Dots.Children.Count; i++)
+        {
+            var dot = (Border)Dots.Children[i];
+            dot.Background = i == _page ? ThemeManager.Brush("AccentBrush") : ThemeManager.Brush("TextTertiaryBrush");
+            Motion.To(dot, WidthProperty, i == _page ? 20 : 7, 380, Motion.SoftSpring);
         }
     }
 
@@ -56,7 +63,7 @@ public partial class WelcomeWindow : Window
         if (_page < Pages.Length - 1)
         {
             _page++;
-            Render();
+            Render(1);
             return;
         }
         Finish();
@@ -66,7 +73,7 @@ public partial class WelcomeWindow : Window
     {
         if (_page == 0) return;
         _page--;
-        Render();
+        Render(-1);
     }
 
     private void OnSkip(object sender, RoutedEventArgs e) => Finish();

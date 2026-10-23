@@ -16,12 +16,22 @@ public partial class PreviewWindow : Window
     private int _index;
     private int _loadVersion;
     private bool _mediaPlaying;
+    private bool _closeAnimationDone;
+    private bool _closing;
 
     private PreviewWindow()
     {
         InitializeComponent();
         SourceInitialized += (_, _) => WindowHelper.HideFromAltTab(this);
         PreviewKeyDown += OnKey;
+        // Zooms open like Quick Look.
+        Loaded += (_, _) =>
+        {
+            if (_closing) return;
+            Motion.To(Frame, OpacityProperty, 1, 180);
+            Motion.To(FrameScale, System.Windows.Media.ScaleTransform.ScaleXProperty, 1, 460, Motion.SoftSpring, from: 0.92);
+            Motion.To(FrameScale, System.Windows.Media.ScaleTransform.ScaleYProperty, 1, 460, Motion.SoftSpring, from: 0.92);
+        };
         Closed += (_, _) =>
         {
             MediaView.Close();
@@ -32,6 +42,7 @@ public partial class PreviewWindow : Window
     public static void ShowItems(IReadOnlyList<ShelfItem> items, int index)
     {
         if (items.Count == 0) return;
+        if (_instance is { _closing: true }) return;
         _instance ??= new PreviewWindow();
         _instance._items = items;
         _instance.Show(Math.Clamp(index, 0, items.Count - 1));
@@ -39,8 +50,34 @@ public partial class PreviewWindow : Window
         _instance.Activate();
     }
 
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel || _closeAnimationDone || !Motion.Enabled || !IsVisible || Dispatcher.HasShutdownStarted) return;
+        e.Cancel = true;
+        if (_closing) return;
+        _closing = true;
+        MediaView.Pause();
+        Motion.To(FrameScale, System.Windows.Media.ScaleTransform.ScaleXProperty, 0.95, 160, Motion.EaseIn);
+        Motion.To(FrameScale, System.Windows.Media.ScaleTransform.ScaleYProperty, 0.95, 160, Motion.EaseIn);
+        Motion.To(Frame, OpacityProperty, 0, 150, Motion.EaseIn, completed: () =>
+        {
+            _closeAnimationDone = true;
+            Close();
+        });
+    }
+
+    /// <summary>Slides the new item in from the side it came from.</summary>
+    private void AnimateStage(int direction)
+    {
+        if (direction == 0) return;
+        Motion.To(Stage, OpacityProperty, 1, 200, from: 0.2);
+        Motion.To(StageShift, System.Windows.Media.TranslateTransform.XProperty, 0, 420, Motion.SoftSpring, from: 24 * direction);
+    }
+
     private void Show(int index)
     {
+        AnimateStage(IsLoaded ? Math.Sign(index - _index) : 0);
         _index = index;
         var item = _items[index];
         var version = ++_loadVersion;
@@ -102,6 +139,7 @@ public partial class PreviewWindow : Window
             if (version != _loadVersion) return;
             ImageView.Source = image;
             ImageView.Visibility = Visibility.Visible;
+            Motion.To(ImageView, OpacityProperty, 1, 220, from: 0);
             SubtitleText.Text += $" · {image.PixelWidth} × {image.PixelHeight}";
         }
         catch
@@ -133,6 +171,7 @@ public partial class PreviewWindow : Window
             if (version != _loadVersion) return;
             ImageView.Source = bitmap;
             ImageView.Visibility = Visibility.Visible;
+            Motion.To(ImageView, OpacityProperty, 1, 220, from: 0);
             SubtitleText.Text += $" · {pdf.PageCount} page{(pdf.PageCount == 1 ? "" : "s")}";
         }
         catch

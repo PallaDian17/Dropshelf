@@ -10,7 +10,10 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <StackPanel VerticalAlignment="Center">
+        <StackPanel x:Name="PageContent" VerticalAlignment="Center">
+            <StackPanel.RenderTransform>
+                <TranslateTransform x:Name="PageShift" />
+            </StackPanel.RenderTransform>
             <Border Width="132" Height="132" CornerRadius="30" Background="{DynamicResource CardBackgroundBrush}"
                     BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" HorizontalAlignment="Center">
                 <TextBlock x:Name="Illustration" Style="{StaticResource Glyph}" FontSize="58" Foreground="{DynamicResource AccentBrush}" />

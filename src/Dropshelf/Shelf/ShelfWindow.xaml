@@ -16,7 +16,7 @@
         <DataTemplate x:Key="GridItemTemplate" DataType="{x:Type core:ShelfItem}">
             <StackPanel Width="88" Margin="0,2" ToolTip="{Binding DisplayName}">
                 <Grid Width="64" Height="64" HorizontalAlignment="Center">
-                    <Image Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                    <Image x:Name="Thumb" Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
                     <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="32"
                                Foreground="{DynamicResource TextSecondaryBrush}"
                                Visibility="{Binding HasThumbnail, Converter={StaticResource InverseBoolToVis}}" />
@@ -24,6 +24,19 @@
                 <TextBlock Text="{Binding DisplayName}" TextAlignment="Center" TextTrimming="CharacterEllipsis"
                            TextWrapping="Wrap" MaxHeight="30" FontSize="11" Margin="2,4,2,0" />
             </StackPanel>
+            <DataTemplate.Triggers>
+                <!-- Thumbnails arrive asynchronously; fade them in instead of popping. -->
+                <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Opacity"
+                                                 From="0" To="1" Duration="{x:Static ui:Motion.ThumbnailFade}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <DataTemplate x:Key="ListItemTemplate" DataType="{x:Type core:ShelfItem}">
@@ -32,7 +45,7 @@
                     <ColumnDefinition Width="40" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Image Width="30" Height="30" Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
+                <Image x:Name="Thumb" Width="30" Height="30" Source="{Binding Thumbnail}" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
                 <TextBlock Text="{Binding Glyph}" Style="{StaticResource Glyph}" FontSize="20" Foreground="{DynamicResource TextSecondaryBrush}"
                            Visibility="{Binding HasThumbnail, Converter={StaticResource InverseBoolToVis}}" />
                 <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="4,0,0,0">
@@ -40,17 +53,39 @@
                     <TextBlock Text="{Binding Subtitle}" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
                 </StackPanel>
             </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding HasThumbnail}" Value="True">
+                    <DataTrigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <DoubleAnimation Storyboard.TargetName="Thumb" Storyboard.TargetProperty="Opacity"
+                                                 From="0" To="1" Duration="{x:Static ui:Motion.ThumbnailFade}" />
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </DataTrigger.EnterActions>
+                </DataTrigger>
+            </DataTemplate.Triggers>
         </DataTemplate>
 
         <ItemsPanelTemplate x:Key="GridPanel">
             <WrapPanel />
         </ItemsPanelTemplate>
         <ItemsPanelTemplate x:Key="ListPanel">
-            <VirtualizingStackPanel />
+            <StackPanel />
         </ItemsPanelTemplate>
     </Window.Resources>
 
-    <Grid x:Name="Root" Margin="14">
+    <!-- The card is sized explicitly (and animated) inside a window that is at least as large,
+         anchored top-left; the transparent rest of the window is click- and drop-through. -->
+    <Grid x:Name="Root" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Top"
+          Width="152" Height="172" Opacity="0" RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
+            <TransformGroup>
+                <ScaleTransform x:Name="RootScale" />
+                <ScaleTransform x:Name="LiftScale" />
+            </TransformGroup>
+        </Grid.RenderTransform>
+
         <Border x:Name="ShadowLayer" CornerRadius="16" Background="{DynamicResource ShelfBackgroundBrush}">
             <Border.Effect>
                 <DropShadowEffect BlurRadius="16" ShadowDepth="3" Opacity="0.35" Color="{DynamicResource ShadowColor}" />
@@ -59,7 +94,7 @@
 
         <Border x:Name="Card" CornerRadius="16" Background="{DynamicResource ShelfBackgroundBrush}"
                 BorderBrush="{DynamicResource ShelfBorderBrush}" BorderThickness="1">
-            <Grid>
+            <Grid x:Name="CardContent" SizeChanged="OnCardContentSizeChanged">
                 <!-- ===== Stack view (collapsed shelf) ===== -->
                 <Grid x:Name="StackView">
                     <Grid.RowDefinitions>
@@ -84,9 +119,14 @@
                     </Grid>
 
                     <Grid x:Name="StackArea" Grid.Row="1" Background="Transparent" Cursor="Hand"
-                          MouseLeftButtonDown="OnStackMouseDown" MouseMove="OnStackMouseMove" MouseLeftButtonUp="OnStackMouseUp">
+                          MouseLeftButtonDown="OnStackMouseDown" MouseMove="OnStackMouseMove" MouseLeftButtonUp="OnStackMouseUp"
+                          MouseEnter="OnStackMouseEnter" MouseLeave="OnStackMouseLeave">
                         <Grid x:Name="StackHost" Width="116" Height="100" HorizontalAlignment="Center" VerticalAlignment="Center"
-                              IsHitTestVisible="False" />
+                              IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform x:Name="StackLift" />
+                            </Grid.RenderTransform>
+                        </Grid>
                         <StackPanel x:Name="EmptyState" VerticalAlignment="Center" HorizontalAlignment="Center" IsHitTestVisible="False">
                             <TextBlock Text="&#xE896;" Style="{StaticResource Glyph}" FontSize="22" Foreground="{DynamicResource TextTertiaryBrush}" />
                             <TextBlock Text="Drop files here" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,8,0,0"
@@ -138,6 +178,7 @@
                     </Grid>
 
                     <ListBox x:Name="ItemsList" Grid.Row="1" Margin="6,0,6,6" SelectionMode="Extended"
+                             ItemContainerStyle="{StaticResource FadeInListBoxItem}"
                              ItemTemplate="{StaticResource GridItemTemplate}" ItemsPanel="{StaticResource GridPanel}"
                              PreviewMouseLeftButtonDown="OnListPreviewMouseDown" PreviewMouseMove="OnListPreviewMouseMove"
                              PreviewMouseLeftButtonUp="OnListPreviewMouseUp" MouseDoubleClick="OnListDoubleClick"
@@ -168,11 +209,12 @@
                         <Button x:Name="PanelPrimary" Grid.Column="2" Style="{StaticResource AccentButton}" Content="Continue"
                                 Padding="14,4" MinHeight="26" Click="OnPanelPrimary" IsDefault="True" />
                     </Grid>
-                    <ContentControl x:Name="PanelHost" Grid.Row="1" Margin="12,0,12,12" Focusable="False" />
+                    <ContentControl x:Name="PanelHost" Grid.Row="1" Margin="12,0,12,12" Focusable="False"
+                                    SizeChanged="OnPanelHostSizeChanged" />
                 </Grid>
 
                 <!-- ===== Overlays ===== -->
-                <Border x:Name="BusyOverlay" CornerRadius="15" Background="{DynamicResource OverlayBrush}" Visibility="Collapsed">
+                <Border x:Name="BusyOverlay" CornerRadius="15" Background="{DynamicResource OverlayBrush}" Visibility="Collapsed" Opacity="0">
                     <StackPanel VerticalAlignment="Center" Margin="18">
                         <TextBlock x:Name="BusyText" Text="Working…" HorizontalAlignment="Center" Margin="0,0,0,10" />
                         <ProgressBar IsIndeterminate="True" Width="96" />
@@ -182,13 +224,17 @@
 
                 <Border x:Name="Toast" CornerRadius="10" Background="{DynamicResource MenuBackgroundBrush}"
                         BorderBrush="{DynamicResource MenuBorderBrush}" BorderThickness="1" VerticalAlignment="Bottom"
-                        HorizontalAlignment="Center" Margin="8,0,8,8" Padding="10,6" Visibility="Collapsed" IsHitTestVisible="False">
+                        HorizontalAlignment="Center" Margin="8,0,8,8" Padding="10,6" Visibility="Collapsed" Opacity="0"
+                        IsHitTestVisible="False">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ToastShift" />
+                    </Border.RenderTransform>
                     <TextBlock x:Name="ToastText" TextWrapping="Wrap" TextAlignment="Center" FontSize="11" MaxWidth="300" />
                 </Border>
             </Grid>
         </Border>
 
         <Border x:Name="DropHighlight" CornerRadius="16" BorderThickness="2" BorderBrush="{DynamicResource AccentBrush}"
-                Visibility="Collapsed" IsHitTestVisible="False" />
+                Opacity="0" IsHitTestVisible="False" />
     </Grid>
 </Window>

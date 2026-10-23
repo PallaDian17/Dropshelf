@@ -31,6 +31,7 @@ public partial class App : Application
         }
 
         base.OnStartup(e);
+        Motion.Initialize();
         DispatcherUnhandledException += OnUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Error("Unhandled exception", ex.ExceptionObject as Exception);
 

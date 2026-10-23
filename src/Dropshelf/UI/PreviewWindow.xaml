@@ -5,8 +5,11 @@
         ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" WindowStartupLocation="CenterScreen"
         Width="820" Height="620" UseLayoutRounding="True"
         FontFamily="{StaticResource UiFont}" FontSize="12" Foreground="{DynamicResource TextPrimaryBrush}">
-    <Border Margin="16" CornerRadius="14" Background="{DynamicResource ShelfBackgroundBrush}"
-            BorderBrush="{DynamicResource ShelfBorderBrush}" BorderThickness="1">
+    <Border x:Name="Frame" Margin="16" CornerRadius="14" Background="{DynamicResource ShelfBackgroundBrush}"
+            BorderBrush="{DynamicResource ShelfBorderBrush}" BorderThickness="1" Opacity="0" RenderTransformOrigin="0.5,0.5">
+        <Border.RenderTransform>
+            <ScaleTransform x:Name="FrameScale" />
+        </Border.RenderTransform>
         <Border.Effect>
             <DropShadowEffect BlurRadius="22" ShadowDepth="4" Opacity="0.4" Color="{DynamicResource ShadowColor}" />
         </Border.Effect>
@@ -37,7 +40,10 @@
                 </StackPanel>
             </Grid>
 
-            <Grid Grid.Row="1" Margin="14,0,14,14">
+            <Grid x:Name="Stage" Grid.Row="1" Margin="14,0,14,14">
+                <Grid.RenderTransform>
+                    <TranslateTransform x:Name="StageShift" />
+                </Grid.RenderTransform>
                 <Image x:Name="ImageView" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" Visibility="Collapsed" />
                 <MediaElement x:Name="MediaView" LoadedBehavior="Manual" UnloadedBehavior="Close" Stretch="Uniform"
                               Visibility="Collapsed" MouseLeftButtonUp="OnMediaClick" />

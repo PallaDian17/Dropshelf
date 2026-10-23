@@ -46,6 +46,7 @@ public sealed class ShelfManager
     public static ShelfWindow? ActiveOutboundShelf { get; set; }
 
     public IReadOnlyList<ShelfWindow> Shelves => _shelves;
+    public bool IsShuttingDown => _shuttingDown;
     public ShelfWindow? LastActive { get; private set; }
     public RecentShelvesStore Recent { get; } = new();
 

@@ -17,9 +17,12 @@
     <RootNamespace>Dropshelf</RootNamespace>
     <Product>Dropshelf</Product>
     <Description>Floating drag-and-drop shelves for Windows</Description>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <NoWarn>$(NoWarn);CA1416;SYSLIB1054;SYSLIB1096;WFO0003</NoWarn>
+    <!-- Precompile to native code when publishing, so the first shelf and its first animations
+         don't stutter while the JIT warms up. -->
+    <PublishReadyToRun Condition="'$(RuntimeIdentifier)' != ''">true</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>

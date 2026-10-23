@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
 using Dropshelf.Core;
 
 namespace Dropshelf.Native;
@@ -12,8 +13,22 @@ namespace Dropshelf.Native;
 /// </summary>
 public static class WindowHelper
 {
-    private static readonly Dictionary<IntPtr, DispatcherTimer> Animations = new();
+    private static readonly Dictionary<IntPtr, MoveAnimation> Animations = new();
     private static readonly Dictionary<uint, string> ProcessNames = new();
+    private static bool _renderingHooked;
+
+    private sealed class MoveAnimation
+    {
+        public required IntPtr Hwnd { get; init; }
+        public required int FromX { get; init; }
+        public required int FromY { get; init; }
+        public required int ToX { get; init; }
+        public required int ToY { get; init; }
+        public required double DurationMs { get; init; }
+        public required IEasingFunction Ease { get; init; }
+        public Action? Completed { get; init; }
+        public Stopwatch? Clock { get; set; }
+    }
 
     public static IntPtr Handle(Window w) => new WindowInteropHelper(w).EnsureHandle();
 
@@ -91,8 +106,11 @@ public static class WindowHelper
             NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
     }
 
-    /// <summary>Ease-out move to (x, y) over <paramref name="durationMs"/>.</summary>
-    public static void AnimateTo(IntPtr hwnd, int x, int y, int durationMs = 180, Action? completed = null)
+    /// <summary>
+    /// Moves a window to (x, y), stepping once per rendered frame (CompositionTarget.Rendering)
+    /// so the motion stays in sync with the display instead of a coarse 15.6 ms timer.
+    /// </summary>
+    public static void AnimateTo(IntPtr hwnd, int x, int y, int durationMs = 240, Action? completed = null, IEasingFunction? ease = null)
     {
         StopAnimation(hwnd);
         var start = GetRect(hwnd);
@@ -101,31 +119,61 @@ public static class WindowHelper
             completed?.Invoke();
             return;
         }
-
-        var watch = Stopwatch.StartNew();
-        var timer = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(10) };
-        timer.Tick += (_, _) =>
+        if (!UI.Motion.Enabled || durationMs <= 0)
         {
-            var t = Math.Min(1.0, watch.Elapsed.TotalMilliseconds / durationMs);
-            var eased = 1 - Math.Pow(1 - t, 3);
-            var cx = (int)Math.Round(start.Left + (x - start.Left) * eased);
-            var cy = (int)Math.Round(start.Top + (y - start.Top) * eased);
-            NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, cx, cy, 0, 0,
+            NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, x, y, 0, 0,
                 NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
-            if (t >= 1.0)
-            {
-                StopAnimation(hwnd);
-                completed?.Invoke();
-            }
+            completed?.Invoke();
+            return;
+        }
+
+        Animations[hwnd] = new MoveAnimation
+        {
+            Hwnd = hwnd,
+            FromX = start.Left,
+            FromY = start.Top,
+            ToX = x,
+            ToY = y,
+            DurationMs = durationMs,
+            Ease = ease ?? UI.Motion.EaseOutQuint,
+            Completed = completed,
         };
-        Animations[hwnd] = timer;
-        timer.Start();
+        if (!_renderingHooked)
+        {
+            _renderingHooked = true;
+            CompositionTarget.Rendering += OnRendering;
+        }
     }
 
-    public static void StopAnimation(IntPtr hwnd)
+    private static readonly List<MoveAnimation> FrameBuffer = new();
+
+    private static void OnRendering(object? sender, EventArgs e)
     {
-        if (Animations.Remove(hwnd, out var timer)) timer.Stop();
+        // Reused buffer: this runs every frame, and completions may start or stop animations.
+        FrameBuffer.Clear();
+        FrameBuffer.AddRange(Animations.Values);
+        foreach (var a in FrameBuffer)
+        {
+            a.Clock ??= Stopwatch.StartNew();
+            var t = Math.Min(1.0, a.Clock.Elapsed.TotalMilliseconds / a.DurationMs);
+            var k = t >= 1.0 ? 1.0 : a.Ease.Ease(t);
+            var cx = (int)Math.Round(a.FromX + (a.ToX - a.FromX) * k);
+            var cy = (int)Math.Round(a.FromY + (a.ToY - a.FromY) * k);
+            NativeMethods.SetWindowPos(a.Hwnd, IntPtr.Zero, cx, cy, 0, 0,
+                NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOZORDER | NativeMethods.SWP_NOACTIVATE);
+            if (t < 1.0) continue;
+            if (Animations.TryGetValue(a.Hwnd, out var current) && ReferenceEquals(current, a)) Animations.Remove(a.Hwnd);
+            a.Completed?.Invoke();
+        }
+
+        if (Animations.Count == 0 && _renderingHooked)
+        {
+            _renderingHooked = false;
+            CompositionTarget.Rendering -= OnRendering;
+        }
     }
+
+    public static void StopAnimation(IntPtr hwnd) => Animations.Remove(hwnd);
 
     public static bool IsAnimating(IntPtr hwnd) => Animations.ContainsKey(hwnd);
 
